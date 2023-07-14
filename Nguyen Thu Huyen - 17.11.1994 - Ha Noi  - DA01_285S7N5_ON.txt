@@ -1,0 +1,125 @@
+---Họ và Tên: Nguyễn Thu Huyền
+---Ngày sinh: 17/11/1994
+---Hà Nội
+------------------------------
+------------------------------------
+
+--- Liệt kê 100 trạm xe có số xe lớn hơn trung bình các số xe theo thứ tự tăng của tên trạm xe,
+----chỉ liệt kê tên trạm xe có chứa chuỗi ‘Street
+with q as 
+(
+select name, bikes_count
+FROM `bigquery-public-data.london_bicycles.cycle_stations`
+where name like '%Street%'
+group by name, bikes_count
+order by name
+limit 100
+)
+select name, avg(bikes_count) as avg_bike_count
+from q
+where bikes_count > (select avg(bikes_count) from q)
+group by name;
+
+--- Thống kê theo năm và đếm số lượt thuê xe
+select extract(year from start_date) as bike_year, count(*) as cnt
+from `bigquery-public-data.london_bicycles.cycle_hire`
+group by bike_year
+order by bike_year;
+
+--- Trong năm 2016 (năm trên cột start_date), liệt kê các lượt thuê xe có thời gian thuê (tính
+---theo giờ) chỉ trong vòng 1 ngày (24 giờ)
+with q as 
+(
+  select rental_id, duration, start_station_name, end_station_name,
+  SAFE_DIVIDE(duration, 60) as duration_by_hour, extract(year from start_date) as bike_year,
+  from `bigquery-public-data.london_bicycles.cycle_hire`
+)
+select *
+from q
+where bike_year =2016 and duration_by_hour<=24
+order by duration_by_hour desc
+limit 10;
+
+ 
+--- Liệt kê các lượt thuê xe có trạm bắt đầu và trạm kết thúc giống nhau. Sắp theo thời gian thuê giảm dần
+select rental_id, bike_id, duration, start_station_name, end_station_name,
+from `bigquery-public-data.london_bicycles.cycle_hire`
+where start_station_name like end_station_name
+order by duration desc
+limit 10;
+
+--- Trong năm 2016 cho biết 10 trạm xe khởi hành có tổng thời gian thuê xe lớn nhất, hiển thị
+--- bao nhiêu chuyến xe, thời gian thuê nhỏ nhất, lớn nhất, trung bình. Chỉ xét các thời gian
+--- thuê lớn hơn 0
+
+select start_station_name,
+    count(duration) as cnt, max(duration) as d_max, min(duration) as d_min, avg(duration) as d_avg
+from `bigquery-public-data.london_bicycles.cycle_hire`
+where duration >0
+group by start_station_name
+order by sum(duration) desc
+limit 10;
+
+--- Thống kê theo các tháng của năm 2016 với tổng số giờ thuê theo mỗi tháng
+select extract(month from start_date) as bike_month, format("%'.2f",(SAFE_DIVIDE(sum(duration),60*60))) as d_sum_str
+from `bigquery-public-data.london_bicycles.cycle_hire`
+where extract(year from start_date)=2016
+group by bike_month
+order by bike_month;
+
+--- Trong năm 2016, cho biết 3 tháng có tổng số giờ thuê xe cao nhất
+select extract(month from start_date) as bike_month,  format("%'.2f",(SAFE_DIVIDE(sum(duration),60*60))) as d_sum_str
+from `bigquery-public-data.london_bicycles.cycle_hire`
+where extract(year from start_date)=2016
+group by bike_month
+order by bike_month desc
+limit 3;
+
+
+
+--- Trong năm 2016, thống kê theo các tháng và đếm số lượt thuê xe. Sắp số lượt thuê giảm dần
+select extract(month from start_date) as bike_month,  count(rental_id) as cnt
+from `bigquery-public-data.london_bicycles.cycle_hire`
+where extract(year from start_date)=2016
+group by bike_month
+order by cnt desc
+limit 10;
+
+--- Trong năm 2016, liệt kê các lượt thuê xe có thời gian thuê lớn hơn thời gian thuê trung bình
+--- của tháng. Sắp tăng theo ngày bắt đầu
+---select rental_id, bike_id, duration, FORMAT_DATE("%d-%m-%Y", start_date) as date_str
+
+with q as 
+(
+  select rental_id, bike_id, duration, FORMAT_DATE("%d-%m-%Y", start_date) as date_str, extract (month from start_date) as bike_month
+  from `bigquery-public-data.london_bicycles.cycle_hire`
+  where extract (year from start_date) =2016
+  group by duration, start_date, rental_id, bike_id
+)
+SELECT *
+FROM
+  (
+  select *, avg(duration) OVER(PARTITION BY bike_month) as d_avg_by_month
+  from q
+  )
+  where duration > d_avg_by_month
+  order by date_str
+limit 100;
+
+
+--- Trong năm 2016, cho biết các lượt thuê xe của mỗi tháng có thời gian thuê lớn nhất (tháng
+--- của ngày bắt đầu thuê)
+with q as 
+(select *, row_number() over(partition by bike_month order by duration desc)  as num 
+from
+  (select extract(month from start_date) as bike_month, 
+  rental_id, bike_id, start_station_name, end_station_name, duration, start_date
+  from `bigquery-public-data.london_bicycles.cycle_hire`
+  WHERE extract(year from start_date) =2016
+  )
+)
+select *,
+from q
+where num = 1
+order by bike_month
+limit 10;
